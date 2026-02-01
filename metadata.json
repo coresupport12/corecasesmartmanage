@@ -1,0 +1,7 @@
+{
+  "name": "Core Dental Lab Case Manager",
+  "description": "A professional dental lab communication and report generation system. It features AI message polishing using Gemini, printable PDF report generation with QR codes for 3D designs, and case management.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
