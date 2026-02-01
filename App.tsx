@@ -28,25 +28,43 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSending, setIsSending] = useState<string | null>(null);
   const [cloudStatus, setCloudStatus] = useState<'connected' | 'disconnected' | 'error'>('disconnected');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const caseId = params.get('caseId');
-    const savedGasUrl = localStorage.getItem('core-dental-gas-url');
+    const sourceParam = params.get('source');
     
-    if (savedGasUrl) {
-      setGasUrl(savedGasUrl);
-      testCloudConnection(savedGasUrl);
+    // URL 파라미터(source)가 있으면 그것을 우선 사용 (Doctor 접속 시), 없으면 로컬 스토리지 사용 (Staff 접속 시)
+    let effectiveGasUrl = localStorage.getItem('core-dental-gas-url') || '';
+    
+    if (sourceParam) {
+      try {
+        effectiveGasUrl = decodeURIComponent(sourceParam);
+        // 세션 동안 사용할 URL 업데이트
+        setGasUrl(effectiveGasUrl);
+      } catch (e) {
+        console.error("Invalid source param");
+      }
+    } else if (effectiveGasUrl) {
+      setGasUrl(effectiveGasUrl);
     }
 
     if (caseId) {
-      loadPortalCase(caseId, savedGasUrl || '');
+      // Case ID가 있으면 로그인 화면 건너뛰고 바로 포털 모드로 진입
+      setView('portal');
+      loadPortalCase(caseId, effectiveGasUrl);
     } else {
+      // 일반 스태프 접속 흐름
       const savedStaffName = localStorage.getItem('core-dental-active-staff');
       if (savedStaffName) {
         setStaffName(savedStaffName);
         setView('list');
-        if (savedGasUrl) syncFromCloud(savedGasUrl);
+        if (effectiveGasUrl) syncFromCloud(effectiveGasUrl);
+      }
+      
+      if (effectiveGasUrl) {
+        testCloudConnection(effectiveGasUrl);
       }
     }
 
@@ -69,9 +87,11 @@ const App: React.FC = () => {
   const loadPortalCase = async (id: string, url: string) => {
     if (!url) {
       console.warn("Cloud connection required for portal");
+      setLoadError("Connection link is invalid or expired.");
       return;
     }
     setIsSyncing(true);
+    setLoadError(null);
     try {
       const response = await fetch(`${url}?caseId=${id}`);
       const data = await response.json();
@@ -81,11 +101,15 @@ const App: React.FC = () => {
           fileData: typeof data.fileData === 'string' ? JSON.parse(data.fileData) : (data.fileData || [])
         };
         setActiveCase(record);
+        // view는 useEffect에서 이미 설정되지만 확실히 하기 위해
         setView('portal');
+      } else {
+        setLoadError("Case not found.");
       }
     } catch (err) {
       console.error("Portal Case Load Error:", err);
       setCloudStatus('error');
+      setLoadError("Failed to load case data. Please check your internet connection.");
     } finally {
       setIsSyncing(false);
     }
@@ -123,12 +147,10 @@ const App: React.FC = () => {
   const saveToCloud = async (record: CaseRecord, isNotify: boolean = false, emailData: any = {}) => {
     if (!gasUrl) return;
     try {
-      // 이미지 데이터가 너무 크면 이메일 발송 시 GAS에서 에러가 날 수 있으므로, 알림 시에는 파일 데이터를 제외하거나 최소화하는 전략
       const payload = { 
         ...record, 
         isNotify, 
         ...emailData,
-        // 이메일 발송 시 시트에만 저장하고 알림 본문에는 텍스트만 전송되도록 처리 (GAS doPost 부하 경감)
       };
       
       await fetch(gasUrl, {
@@ -146,7 +168,8 @@ const App: React.FC = () => {
 
   const buildEmailPayload = (record: CaseRecord) => {
     const currentUrl = window.location.origin + window.location.pathname;
-    const portalLink = `${currentUrl}?caseId=${record.id}`;
+    // Doctor가 접속할 때 GAS URL 정보를 알 수 있도록 파라미터에 추가 (URL 인코딩)
+    const portalLink = `${currentUrl}?caseId=${record.id}&source=${encodeURIComponent(gasUrl)}`;
     const subject = `[Design Approval Needed] Patient: ${record.patientName}`;
     
     const htmlBody = `
@@ -183,11 +206,9 @@ const App: React.FC = () => {
     const updatedRecord: CaseRecord = { ...record, status: 'sent' as CaseStatus };
     
     try {
-      // GAS의 부하를 줄이기 위해 파일 데이터가 너무 많으면 알림 시에만 일시적으로 비워서 보냄
-      // (어차피 시트에는 이전에 저장되어 있을 것임)
       const notifyRecord = { ...updatedRecord };
       if (notifyRecord.fileData && notifyRecord.fileData.length > 2) {
-          notifyRecord.fileData = notifyRecord.fileData.slice(0, 1); // 첫 이미지만 포함시켜 전송 크기 최적화
+          notifyRecord.fileData = notifyRecord.fileData.slice(0, 1);
       }
 
       await saveToCloud(notifyRecord, true, {
@@ -264,7 +285,29 @@ const App: React.FC = () => {
     })
   , [cases, searchTerm, statusFilter]);
 
-  if (view === 'portal' && activeCase) {
+  // --- PORTAL VIEW RENDER ---
+  if (view === 'portal') {
+    if (loadError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6 text-center">
+          <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
+          <h2 className="text-xl font-black text-gray-900 mb-2">Access Error</h2>
+          <p className="text-gray-600 mb-6">{loadError}</p>
+          <a href="/" className="px-6 py-3 bg-white border border-gray-200 rounded-xl font-bold text-sm hover:bg-gray-50 shadow-sm">Return Home</a>
+        </div>
+      );
+    }
+
+    if (!activeCase) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+          <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-6" />
+          <p className="text-gray-900 font-black text-lg animate-pulse tracking-wide uppercase">Loading Secure Case Data...</p>
+          <p className="text-gray-400 text-xs mt-2 font-medium">Connecting to Core Dental Studio Lab Server</p>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-white pb-20 font-sans">
         <header className="bg-black text-white py-10 px-8 flex justify-between items-center">
@@ -289,7 +332,7 @@ const App: React.FC = () => {
               </h3>
               <textarea 
                 className="w-full p-6 border-2 border-white bg-white rounded-3xl shadow-sm outline-none focus:ring-4 focus:ring-blue-500/10 min-h-[150px] mb-8 font-medium text-gray-700" 
-                placeholder="Message for the laboratory..."
+                placeholder="Message for the laboratory (Optional)..."
                 value={replyNotes}
                 onChange={e => setReplyNotes(e.target.value)}
               />
@@ -314,6 +357,7 @@ const App: React.FC = () => {
     );
   }
 
+  // --- LOGIN VIEW ---
   if (view === 'login') {
     return (
       <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center p-6">
@@ -334,6 +378,7 @@ const App: React.FC = () => {
     );
   }
 
+  // --- MAIN APP VIEW ---
   return (
     <div className="min-h-screen bg-[#f8f9fa] pb-20 font-sans">
       <nav className="no-print bg-white/90 backdrop-blur-xl border-b border-gray-100 sticky top-0 z-50 h-20 flex items-center">
