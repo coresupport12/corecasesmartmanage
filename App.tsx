@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { CaseRecord, CaseCategory, CaseStatus, Contact } from './types';
 import CaseForm from './components/CaseForm';
@@ -17,6 +16,8 @@ const App: React.FC = () => {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [contacts, setContacts] = useState<Contact[]>(INITIAL_CONTACTS);
   const [staffList, setStaffList] = useState<string[]>(DEFAULT_STAFF);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [isEditingStaff, setIsEditingStaff] = useState(false);
   const [gasUrl, setGasUrl] = useState('');
   const [view, setView] = useState<'login' | 'list' | 'form' | 'report' | 'contacts' | 'settings' | 'portal'>('login');
   const [activeCase, setActiveCase] = useState<CaseRecord | null>(null);
@@ -73,6 +74,19 @@ const App: React.FC = () => {
     if (savedContacts) setContacts(JSON.parse(savedContacts));
     if (savedStaffList) setStaffList(JSON.parse(savedStaffList));
   }, []);
+
+  const addStaff = () => {
+    if (newStaffName.trim() && !staffList.includes(newStaffName.trim())) {
+      setStaffList([...staffList, newStaffName.trim()]);
+      setNewStaffName('');
+    }
+  };
+
+  const removeStaff = (nameToRemove: string) => {
+    if (confirm(`Remove ${nameToRemove} from staff list?`)) {
+      setStaffList(staffList.filter(name => name !== nameToRemove));
+    }
+  };
 
   const testCloudConnection = async (url: string) => {
     try {
@@ -364,15 +378,50 @@ const App: React.FC = () => {
         <div className="bg-white p-12 rounded-[56px] shadow-2xl max-w-md w-full text-center">
           <div className="w-20 h-20 bg-blue-600 rounded-[28px] mx-auto mb-10 flex items-center justify-center text-white text-4xl font-black">C</div>
           <h1 className="text-3xl font-black text-gray-900 tracking-tighter mb-4 uppercase">Core Station</h1>
-          <p className="text-gray-400 font-bold text-xs mb-10 uppercase tracking-widest">Select Profile</p>
-          <div className="grid grid-cols-1 gap-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+          <div className="flex justify-between items-center mb-6 px-2">
+            <p className="text-gray-400 font-bold text-xs uppercase tracking-widest">Select Profile</p>
+            <button onClick={() => setIsEditingStaff(!isEditingStaff)} className="text-xs font-bold text-blue-500 hover:text-blue-700">
+              {isEditingStaff ? 'Done' : 'Edit List'}
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-1 gap-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar mb-4">
             {staffList.map(name => (
-              <button key={name} onClick={() => { setStaffName(name); setView('list'); syncFromCloud(); }} className="p-5 border-2 border-gray-50 rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all font-black text-gray-800 flex items-center justify-between group">
-                <span>{name}</span>
-                <ChevronLeft className="w-5 h-5 rotate-180 text-gray-200 group-hover:text-blue-500" />
-              </button>
+              <div key={name} className="relative group">
+                <button 
+                  onClick={() => { setStaffName(name); setView('list'); syncFromCloud(); }} 
+                  className="w-full p-5 border-2 border-gray-50 rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all font-black text-gray-800 flex items-center justify-between group"
+                >
+                  <span>{name}</span>
+                  {!isEditingStaff && <ChevronLeft className="w-5 h-5 rotate-180 text-gray-200 group-hover:text-blue-500" />}
+                </button>
+                {isEditingStaff && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); removeStaff(name); }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-red-100 text-red-500 rounded-lg hover:bg-red-200"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
+
+          {isEditingStaff && (
+            <div className="flex gap-2 animate-in fade-in slide-in-from-top-2">
+              <input 
+                type="text" 
+                className="flex-1 px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold text-sm"
+                placeholder="New Staff Name"
+                value={newStaffName}
+                onChange={e => setNewStaffName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addStaff()}
+              />
+              <button onClick={addStaff} className="bg-black text-white px-4 rounded-xl hover:bg-gray-800 transition-all">
+                <Plus className="w-5 h-5" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
