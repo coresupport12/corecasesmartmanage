@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { CaseRecord, CaseCategory, Contact } from '../types';
 import { polishMessage } from '../services/geminiService';
@@ -189,10 +188,12 @@ const CaseForm: React.FC<CaseFormProps> = ({ onSave, initialData, contacts, staf
           </select>
         </div>
 
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">Target Email</label>
-          <input type="email" required className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={formData.doctorEmail} onChange={e => setFormData({ ...formData, doctorEmail: e.target.value })} />
-        </div>
+        {!formData.isWhiteLabel && (
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Target Email</label>
+            <input type="email" required className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={formData.doctorEmail} onChange={e => setFormData({ ...formData, doctorEmail: e.target.value })} />
+          </div>
+        )}
       </div>
 
       <div>
